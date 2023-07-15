@@ -19,9 +19,14 @@ macro(ADD_ALL_SUBDIR)
     # 遍历子文件夹
     foreach(subdirectory ${subdirectories})
         if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${subdirectory})
-            # 调用add_subdirectory添加子目录
-            message(STATUS "[add_subdirectory] ${subdirectory}")
-            add_subdirectory(${subdirectory})
+            # 检查子文件夹中的CMakeLists.txt文件是否存在
+            if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${subdirectory}/CMakeLists.txt)
+                # 调用add_subdirectory添加子目录
+                message(STATUS "[add_subdirectory] ${subdirectory}")
+                add_subdirectory(${subdirectory})
+            else()
+                message(STATUS "[add_subdirectory] ${subdirectory}. CMakeLists.txt not found. Skipping...")
+            endif()
         endif()
     endforeach()
 endmacro()
