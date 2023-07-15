@@ -1,0 +1,20 @@
+#pragma once
+
+#include "test.h"
+
+namespace test
+{
+	/* 清除颜色: 指的是用指定颜色填充背景色 刷屏 */
+	class TestClearColor : public Test
+	{
+	private:
+		float m_ClearColor[4];
+	public:
+		TestClearColor();
+		~TestClearColor();
+
+		void OnUpdate(float deltaTime) override;
+		void OnRender() override;
+		void OnImGuiRender() override;
+	};
+}

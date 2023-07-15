@@ -1,0 +1,12 @@
+project(imgui)
+
+add_library(imgui INTERFACE)
+target_include_directories(imgui INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+file(GLOB IMGUI_FILES 
+    ${CMAKE_CURRENT_SOURCE_DIR}/*.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
+)
+target_sources(imgui INTERFACE ${IMGUI_FILES})
+
+find_package(OpenGL REQUIRED)
+target_link_libraries(imgui INTERFACE glfw OpenGL::GL)
