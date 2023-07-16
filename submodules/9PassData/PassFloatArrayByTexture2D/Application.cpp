@@ -15,19 +15,22 @@
             gl_FragCoord.w 表示透视除法后的透视修正系数
 
  *  2. 如果OpenGL版本大于3.0，建议使用texelFetch，此函数不进行任何过滤或插值，可以按整数索引原封不动的取像素值
+ *  3. 用SSBO将value拷贝出来，检查数据传输的准确性
  */
 #define GLEW_STATIC
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <iostream>
+#include <random>
 
 #include "glerror.h"
 
-const int WIDTH = 512;
-const int HEIGHT = 512;
+const int WIDTH = 6;
+const int HEIGHT = 4;
+//若修改了WIDTH、HEIGHT，要注意片元着色器中也要适配
 
 const char* vertexShaderSource = R"(
-#version 330 core
+#version 430 core
 
 layout (location = 0) in vec2 position;
 
@@ -38,32 +41,56 @@ void main()
 )";
 
 const char* fragmentShaderSource = R"(
-#version 330 core
+#version 430 core
 
 uniform sampler2D textureData;
+uniform vec2 windowSize; //窗口大小，(width, height)
+
+// 声明SSBO
+layout(std430, binding = 0) buffer TextureBuffer 
+{
+    float data[];
+};
 
 void main()
 {
+    ivec2 texCoord = ivec2(gl_FragCoord.xy); 
+
     //# 一、取像素的两种策略
     // 1. OpenGL<3.0, 使用texture取像素，texture取像素要[0, 1]的UV坐标，因此需要除以窗口大小
-    //vec2 texCoord = vec2(gl_FragCoord.xy / vec2(512, 512)); // 根据实际纹理大小调整
-    //float value = texture(textureData, texCoord).r;         // 从纹理中采样
+    float value = texture(textureData, gl_FragCoord.xy / windowSize).r;
     
     // 2. OpenGL>=3.0，使用texelFetch取像素，用整数索引即可，不需要[0, 1]
-    ivec2 texCoord = ivec2(gl_FragCoord.xy); 
-    float value = texelFetch(textureData, texCoord, 0).r;
+    //float value = texelFetch(textureData, texCoord, 0).r;
         //第三个参数为lod，表示纹理的细节级别，0表示使用基本级别
 
-    //# 二、为验证OpenGL没有将texture2D中的值归一化到[0,1]：
-    // 1. 直接将value显示，如果没有归一化，则是全白色
-    //gl_FragColor = vec4(value, value, value, 1.0);
+    int index = texCoord.x + texCoord.y * int(windowSize.x);
+    data[index] = value;
 
-    // 2. 将value除以arraySize进行显示，如果没有归一化，是一个渐变
-    float arraySize = 512.0 * 512.0;
+    float arraySize = windowSize.x * windowSize.y;
     value = value / arraySize;
     gl_FragColor = vec4(value, value, value, 1.0);
 }
 )";
+
+void print(float* data) {
+    std::cout << "y/x";
+    for (int x = 0; x < WIDTH; ++x) {
+        std::cout << "\t\t" << x;
+    }
+    std::cout << std::endl;
+
+    for (int y = 0; y < HEIGHT; ++y) {
+        std::cout << y;
+
+        for (int x = 0; x < WIDTH; ++x) {
+            int index = x + y * WIDTH;
+            std::cout << "\t\t" << data[index];
+        }
+
+        std::cout << std::endl;
+    }
+}
 
 int main()
 {
@@ -71,6 +98,15 @@ int main()
     {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return -1;
+    }
+
+    // 在创建窗口之前，设置无边框
+	/*为什么要设置无边框？
+	 若WIDTH=8（很小的情况），窗口右上角的“最小化”、“关闭”按钮会将窗口撑大，导致WIDTH>8
+	 */
+    if (WIDTH < 400) 
+    {
+        glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
     }
 
     // 创建窗口并设置OpenGL上下文
@@ -92,14 +128,10 @@ int main()
     }
 
     // 创建顶点着色器
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    GLCall(glShaderSource(vertexShader, 1, &vertexShaderSource, nullptr));
-    GLCall(glCompileShader(vertexShader));
+    GLuint vertexShader = CompileShader(GL_VERTEX_SHADER, &vertexShaderSource);
 
     // 创建片元着色器
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    GLCall(glShaderSource(fragmentShader, 1, &fragmentShaderSource, nullptr));
-    GLCall(glCompileShader(fragmentShader));
+    GLuint fragmentShader = CompileShader(GL_FRAGMENT_SHADER, &fragmentShaderSource);
 
     // 创建着色器程序并链接着色器
     GLuint shaderProgram = glCreateProgram();
@@ -107,14 +139,26 @@ int main()
     GLCall(glAttachShader(shaderProgram, vertexShader));
     GLCall(glLinkProgram(shaderProgram));
     GLCall(glUseProgram(shaderProgram));
+    
+    // 为uniform windowSize设置窗口大小
+    GLint windowSizeLocation = glGetUniformLocation(shaderProgram, "windowSize");
+    glUniform2f(windowSizeLocation, WIDTH, HEIGHT);
 
     // 创建float数组并传输到纹理
     const int arraySize = WIDTH * HEIGHT;
+    std::random_device rd;  // 获取一个真随机数种子
+    std::mt19937 gen(rd()); // 使用 Mersenne Twister 算法
+    std::uniform_real_distribution<float> dis(0.0f, arraySize);
+
     float* floatArray = new float[arraySize];
-    for (int i = 0; i < arraySize; ++i)
-    {
-        floatArray[i] = static_cast<float>(i);
+    for (int y = 0; y < HEIGHT; ++y) {
+        for (int x = 0; x < WIDTH; ++x) {
+            int idx = x + y * WIDTH;
+            floatArray[idx] = dis(gen); //随机数
+        }
     }
+    print(floatArray);
+    std::cout << std::endl;
 
     GLuint textureID;
     glGenTextures(1, &textureID);
@@ -162,6 +206,15 @@ int main()
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
+    // 创建一个用于存储纹理数据的Shader Storage Buffer Object（SSBO）
+    GLuint ssbo;
+    glGenBuffers(1, &ssbo);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * arraySize, nullptr, GL_STATIC_READ);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo); // 将SSBO绑定到绑定点0
+
+    bool doOnce = false;
+
     // 渲染循环
     while (!glfwWindowShouldClose(window))
     {
@@ -172,6 +225,21 @@ int main()
         glBindVertexArray(VAO);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         glBindVertexArray(0);
+
+        if (!doOnce) 
+        {
+            // 将SSBO中的数据拷贝回到CPU端
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+
+            float* cpuData = new float[arraySize];
+            glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(float) * arraySize, cpuData);
+            print(cpuData);
+            delete[] cpuData;
+
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+            doOnce = true;
+        }
 
         glfwSwapBuffers(window);
         glfwPollEvents();
