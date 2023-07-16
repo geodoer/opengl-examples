@@ -29,3 +29,36 @@ inline bool GLLogCall(const char* function, const char* file, int line) {
         #define GL_INVALID_ENUM 0x500
  * 2. 然后在docs.gl/gl4/glGetError文档中找到这个错误，即可知道对应的错误详情
  */
+
+/*
+ *\brief 编译着色器，成功则返回ID，否则范围0，并打印错误
+ */
+inline unsigned int CompileShader(unsigned int type, const char* const* source)
+{
+    unsigned int id;
+    GLCall(id = glCreateShader(type));
+    GLCall(glShaderSource(id, 1, source, nullptr));
+    GLCall(glCompileShader(id));
+
+    int result;
+    GLCall(glGetShaderiv(id, GL_COMPILE_STATUS, &result));
+    if (result == GL_FALSE)
+    {
+        int length;
+        GLCall(glGetShaderiv(id, GL_INFO_LOG_LENGTH, &length));
+
+        char* msg = (char*)_malloca(length * sizeof(char));
+        GLCall(glGetShaderInfoLog(id, length, &length, msg));
+
+        std::cout << "Failed to compile "
+            << (type == GL_VERTEX_SHADER ? "vertex" : "fragment")
+            << " shader!" << std::endl;
+        std::cout << msg << std::endl;
+
+        GLCall(glDeleteShader(id));
+        ASSERT(0);
+        return 0;
+    }
+
+    return id;
+}
